@@ -1,44 +1,70 @@
+import streamlit as st 
+from PIL import Image
+import pickle
+import os
+from flask import Flask, render_template, request
 import pickle
 import numpy as np
-import streamlit as st
-from pathlib import Path
-from streamlit.components.v1 import html
+from PIL import Image
+import tensorflow as tf
 
-# Load the model
-MODEL_PATH = 'models/breast_cancer.pkl'
-model = pickle.load(open(MODEL_PATH, 'rb'))
+app = Flask(__name__)
 
-# Prediction function
-def predict(values):
-    values = np.asarray(values).reshape(1, -1)
-    return model.predict(values)[0]
+def predict(values, dic):
+    # breast_cancer
+    if len(values) == 22:
+        model = pickle.load(open('models/breast_cancer.pkl','rb'))
+        values = np.asarray(values)
+        return model.predict(values.reshape(1, -1))[0]
 
-# Function to load HTML content 
-def load_html(file_path):
-    return Path(file_path).read_text(encoding="utf-8")
+@app.route("/")
+def home():
+    return render_template('home.html')
 
-# Streamlit App
-st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", ["Home", "Breast Cancer Prediction"])
 
-if page == "Home":
-    st.title("Home")
-    home_html = load_html("templates/home.html")  # Replace with your updated file path
-    html(home_html, height=800, scrolling=True)
 
-elif page == "Breast Cancer Prediction":
-    st.title("Breast Cancer Predictor")
-    form_html = load_html("templates/breast_cancer.html")  # Replace with your updated file path
-    html(form_html, height=1000, scrolling=True)
+@app.route("/cancer", methods=['GET', 'POST'])
+def cancerPage():
+    return render_template('breast_cancer.html')
 
-    # Add functionality for predictions
-    st.write("Fill out the form and click Predict.")
-    user_data = [st.number_input(f"Feature {i + 1}:", value=0.0, step=0.01) for i in range(22)]
+@app.route("/predict", methods = ['POST', 'GET'])
+def predictPage():
+    try:
+        if request.method == 'POST':
+            to_predict_dict = request.form.to_dict()
 
-    if st.button("Predict"):
+            for key, value in to_predict_dict.items():
+                try:
+                    to_predict_dict[key] = int(value)
+                except ValueError:
+                    to_predict_dict[key] = float(value)
+
+            to_predict_list = list(map(float, list(to_predict_dict.values())))
+            pred = predict(to_predict_list, to_predict_dict)
+    except:
+        message = "Please enter valid data"
+        return render_template("home.html", message=message)
+
+    return render_template('predict.html', pred=pred)
+
+
+    if request.method == 'POST':
         try:
-            prediction = predict(user_data)
-            result = "Positive for Breast Cancer" if prediction == 1 else "Negative for Breast Cancer"
-            st.success(f"Prediction: {result}")
-        except Exception as e:
-            st.error(f"Error: {str(e)}")
+            img = Image.open(request.files['image'])
+            img.save("uploads/image.jpg")
+            img_path = os.path.join(os.path.dirname(__file__), 'uploads/image.jpg')
+            os.path.isfile(img_path)
+            img = tf.keras.utils.load_img(img_path, target_size=(128, 128))
+            img = tf.keras.utils.img_to_array(img)
+            img = np.expand_dims(img, axis=0)
+
+            model = tf.keras.models.load_model("models/malaria.h5")
+            pred = np.argmax(model.predict(img))
+        except:
+            message = "Please upload an image"
+            return render_template('malaria.html', message=message)
+    return render_template('malaria_predict.html', pred=pred)
+
+
+if __name__ == '__main__':
+    app.run(debug = True)
